@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Tema mínimo para apps Jetpack Compose.
+        No necesita AppCompat ni Material Components —
+        Compose maneja todo el theming internamente.
+    -->
+    <style name="Theme.T9GamepadMapper" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+</resources>

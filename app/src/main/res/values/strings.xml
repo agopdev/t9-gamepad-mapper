@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">T9 Gamepad Mapper</string>
+    <string name="accessibility_service_label">T9 Gamepad — Detección de app</string>
+    <string name="accessibility_service_description">
+        Detecta la app en primer plano para cambiar automáticamente el perfil
+        del gamepad. No lee ni transmite contenido de pantalla.
+    </string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Estado</string>
+    <string name="service_running">Servicio activo</string>
+    <string name="service_stopped">Servicio detenido</string>
+    <string name="service_paused">Servicio pausado</string>
+    <string name="active_profile">Perfil activo</string>
+    <string name="automation_mode">Modo automático</string>
+    <string name="manual_mode">Modo manual</string>
+    <string name="no_profile">Sin perfil</string>
+
+    <!-- Perfiles -->
+    <string name="profiles_title">Perfiles</string>
+    <string name="new_profile">Nuevo perfil</string>
+    <string name="edit_profile">Editar perfil</string>
+    <string name="delete_profile">Eliminar perfil</string>
+    <string name="set_default">Establecer como predeterminado</string>
+    <string name="profile_name_hint">Nombre del perfil</string>
+    <string name="profile_description_hint">Descripción (opcional)</string>
+    <string name="analog_mode_label">Modo del D-Pad analógico</string>
+    <string name="mode_fixed">Fijo (máximo inmediato)</string>
+    <string name="mode_ramp">Gradual (aumenta al mantener)</string>
+    <string name="ramp_speed_label">Velocidad del ramp</string>
+
+    <!-- Automatización -->
+    <string name="automation_title">Automatización</string>
+    <string name="automation_enabled">Cambio automático activo</string>
+    <string name="automation_disabled">Cambio automático desactivado</string>
+    <string name="assign_profile">Asignar perfil</string>
+    <string name="no_assignment">Sin asignación</string>
+    <string name="search_apps">Buscar app…</string>
+
+    <!-- Notificación -->
+    <string name="notification_channel_name">T9 Gamepad Mapper</string>
+    <string name="notification_channel_desc">Estado del servicio de gamepad virtual</string>
+    <string name="notification_title">T9 Gamepad activo</string>
+    <string name="notification_pause">Pausar</string>
+    <string name="notification_resume">Reanudar</string>
+    <string name="notification_stop">Detener</string>
+</resources>
