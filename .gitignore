@@ -1,0 +1,58 @@
+# ── Android ──────────────────────────────────────
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Build outputs
+/build/
+app/build/
+app/.cxx/
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# Room schema exports
+app/schemas/
+
+# ── NDK / C ───────────────────────────────────────
+*.so
+*.o
+*.a
+*.obj
+
+# ── Signing ───────────────────────────────────────
+*.jks
+*.keystore
+*.p12
+release/
+
+# ── IDEs ──────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────
+*.log
+crash_log.txt
+t9mapper_log.txt
+
+# ── Kotlin / Java ─────────────────────────────────
+*.class
+
+# ── ProGuard ──────────────────────────────────────
+proguard/
+mapping.txt
+seeds.txt
+usage.txt
