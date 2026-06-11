@@ -335,6 +335,18 @@ private fun StatusCard(
                         AnalogMode.RAMP  -> "Gradual (ramp ${activeProfile.rampStep})"
                     }
                 )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                StatusRow(
+                    icon     = Icons.Filled.Devices,
+                    iconTint = MaterialTheme.colorScheme.tertiary,
+                    label    = "Dispositivo",
+                    value    = when (activeProfile.deviceType) {
+                        0    -> "Teclado de fábrica"
+                        1    -> "Mando Xbox 360"
+                        2    -> "Teclado PC"
+                        else -> "Desconocido"
+                    }
+                )
             }
         }
     }

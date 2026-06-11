@@ -2,7 +2,6 @@ package com.t9mapper.data.db
 
 import android.content.Context
 import androidx.room.*
-import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.t9mapper.data.model.AppProfileAssignment
 import com.t9mapper.data.model.KeyMapping
@@ -15,12 +14,11 @@ import kotlinx.coroutines.flow.Flow
 // ──────────────────────────────────────────────
 
 class Converters {
-    @TypeConverter
-    fun fromMappingType(value: MappingType): String = value.name
+    @TypeConverter fun fromMappingType(value: MappingType): String = value.name
 
     @TypeConverter
     fun toMappingType(value: String): MappingType =
-        runCatching { MappingType.valueOf(value) }.getOrDefault(MappingType.BUTTON)
+            runCatching { MappingType.valueOf(value) }.getOrDefault(MappingType.BUTTON)
 }
 
 // ──────────────────────────────────────────────
@@ -33,8 +31,7 @@ interface ProfileDao {
     @Query("SELECT * FROM profiles ORDER BY isDefault DESC, name ASC")
     fun getAllProfiles(): Flow<List<Profile>>
 
-    @Query("SELECT * FROM profiles WHERE id = :id")
-    suspend fun getProfileById(id: Long): Profile?
+    @Query("SELECT * FROM profiles WHERE id = :id") suspend fun getProfileById(id: Long): Profile?
 
     @Query("SELECT * FROM profiles WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefaultProfile(): Profile?
@@ -42,11 +39,9 @@ interface ProfileDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: Profile): Long
 
-    @Update
-    suspend fun updateProfile(profile: Profile)
+    @Update suspend fun updateProfile(profile: Profile)
 
-    @Delete
-    suspend fun deleteProfile(profile: Profile)
+    @Delete suspend fun deleteProfile(profile: Profile)
 
     /** Asegurar que solo un perfil sea default */
     @Query("UPDATE profiles SET isDefault = 0 WHERE id != :id")
@@ -78,11 +73,9 @@ interface KeyMappingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMappings(mappings: List<KeyMapping>)
 
-    @Update
-    suspend fun updateMapping(mapping: KeyMapping)
+    @Update suspend fun updateMapping(mapping: KeyMapping)
 
-    @Delete
-    suspend fun deleteMapping(mapping: KeyMapping)
+    @Delete suspend fun deleteMapping(mapping: KeyMapping)
 
     @Query("DELETE FROM key_mappings WHERE profileId = :profileId AND keyCode = :keyCode")
     suspend fun deleteMappingByKey(profileId: Long, keyCode: Int)
@@ -103,16 +96,16 @@ interface AppProfileAssignmentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAssignment(assignment: AppProfileAssignment): Long
 
-    @Update
-    suspend fun updateAssignment(assignment: AppProfileAssignment)
+    @Update suspend fun updateAssignment(assignment: AppProfileAssignment)
 
-    @Delete
-    suspend fun deleteAssignment(assignment: AppProfileAssignment)
+    @Delete suspend fun deleteAssignment(assignment: AppProfileAssignment)
 
     @Query("DELETE FROM app_profile_assignments WHERE packageName = :packageName")
     suspend fun deleteAssignmentByPackage(packageName: String)
 
-    @Query("UPDATE app_profile_assignments SET isEnabled = :enabled WHERE packageName = :packageName")
+    @Query(
+            "UPDATE app_profile_assignments SET isEnabled = :enabled WHERE packageName = :packageName"
+    )
     suspend fun setEnabled(packageName: String, enabled: Boolean)
 }
 
@@ -121,13 +114,9 @@ interface AppProfileAssignmentDao {
 // ──────────────────────────────────────────────
 
 @Database(
-    entities = [
-        Profile::class,
-        KeyMapping::class,
-        AppProfileAssignment::class
-    ],
-    version = 1,
-    exportSchema = true
+        entities = [Profile::class, KeyMapping::class, AppProfileAssignment::class],
+        version = 1,
+        exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -137,30 +126,36 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appProfileAssignmentDao(): AppProfileAssignmentDao
 
     companion object {
-        @Volatile
-        private var INSTANCE: AppDatabase? = null
+        @Volatile private var INSTANCE: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "t9gamepad.db"
-                )
-                .addCallback(object : RoomDatabase.Callback() {
-                    override fun onCreate(db: SupportSQLiteDatabase) {
-                        super.onCreate(db)
-                        // Insertar perfil predeterminado al crear la BD por primera vez
-                        db.execSQL("""
-                            INSERT INTO profiles (name, isDefault, description, createdAt, analogMode, rampStep, isActive)
-                            VALUES ('Predeterminado', 1, 'Perfil base — edítalo o crea uno nuevo', ${System.currentTimeMillis()}, 0, 4096, 1)
-                        """.trimIndent())
+            return INSTANCE
+                    ?: synchronized(this) {
+                        val instance =
+                                Room.databaseBuilder(
+                                                context.applicationContext,
+                                                AppDatabase::class.java,
+                                                "t9gamepad.db"
+                                        )
+                                        .addCallback(
+                                                object : RoomDatabase.Callback() {
+                                                    override fun onCreate(
+                                                            db: SupportSQLiteDatabase
+                                                    ) {
+                                                        super.onCreate(db)
+                                                        // Default profile on create
+                                                        db.execSQL(
+                                                                """
+                                                                INSERT INTO profiles (name, isDefault, description, createdAt, analogMode, rampStep, isActive, deviceType) VALUES ('Teclado de Fábrica', 1, 'El teclado original del teléfono (sin mapeos)', ${System.currentTimeMillis()}, 0, 4096, 1, 0)
+                                                                """.trimIndent()
+                                                        )
+                                                    }
+                                                }
+                                        )
+                                        .build()
+                        INSTANCE = instance
+                        instance
                     }
-                })
-                .build()
-                INSTANCE = instance
-                instance
-            }
         }
     }
 }

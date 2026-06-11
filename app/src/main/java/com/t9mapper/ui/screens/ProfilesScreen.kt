@@ -168,13 +168,11 @@ fun ProfilesScreen(navController: NavController) {
         if (showCreateDialog) {
             CreateProfileDialog(
                 onDismiss = { showCreateDialog = false },
-                onCreate = { name, desc ->
-                    scope.launch {
-                        db.profileDao().insertProfile(
-                            Profile(name = name, description = desc)
-                        )
+                onCreate = { n, d, type -> 
+                    scope.launch { 
+                        db.profileDao().insertProfile(Profile(name = n, description = d, deviceType = type)) 
                     }
-                    showCreateDialog = false
+                    showCreateDialog = false 
                 }
             )
         }
@@ -237,6 +235,17 @@ private fun ProfileCard(
                         "D-Pad: ${if (profile.analogMode == AnalogMode.FIXED.code) "Fijo" else "Gradual"}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                    val deviceLabel = when (profile.deviceType) {
+                        0 -> "Fábrica"
+                        1 -> "Xbox 360"
+                        2 -> "Teclado PC"
+                        else -> "?"
+                    }
+                    Text(
+                        "Dispositivo: $deviceLabel",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
                     )
                 }
                 
@@ -328,10 +337,11 @@ private fun ProfileCard(
 @Composable
 private fun CreateProfileDialog(
     onDismiss: () -> Unit,
-    onCreate: (String, String) -> Unit
+    onCreate: (String, String, Int) -> Unit // <-- Añadido el Int para deviceType
 ) {
     var name by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
+    var selectedType by remember { mutableStateOf(1) } // 1 = Xbox por defecto
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -339,23 +349,37 @@ private fun CreateProfileDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nombre del perfil") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Nombre") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    value = desc,
-                    onValueChange = { desc = it },
-                    label = { Text("Descripción (opcional)") },
-                    modifier = Modifier.fillMaxWidth()
+                    value = desc, onValueChange = { desc = it },
+                    label = { Text("Descripción") }, modifier = Modifier.fillMaxWidth()
                 )
+                
+                Spacer(Modifier.height(8.dp))
+                Text("Tipo de Emulación:", style = MaterialTheme.typography.labelMedium)
+                
+                // Opción 0: Default
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = selectedType == 0, onClick = { selectedType = 0 })
+                    Text("Teclado de Fábrica (Sin modificar)", style = MaterialTheme.typography.bodyMedium)
+                }
+                // Opción 1: Xbox 360
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = selectedType == 1, onClick = { selectedType = 1 })
+                    Text("Mando Xbox 360", style = MaterialTheme.typography.bodyMedium)
+                }
+                // Opción 2: Teclado PC
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = selectedType == 2, onClick = { selectedType = 2 })
+                    Text("Teclado PC (USB/Bluetooth)", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotBlank()) onCreate(name.trim(), desc.trim()) },
+                onClick = { if (name.isNotBlank()) onCreate(name.trim(), desc.trim(), selectedType) },
                 enabled = name.isNotBlank()
             ) { Text("Crear") }
         },
@@ -387,6 +411,7 @@ fun ProfileEditScreen(
     var profileDesc by remember { mutableStateOf("") }
     var analogMode by remember { mutableStateOf(AnalogMode.FIXED) }
     var rampStep by remember { mutableStateOf(4096f) }
+    var deviceType by remember { mutableStateOf(1) }
 
     // Dialogo para mapear una tecla
     var mappingDialogKey by remember { mutableStateOf<PhysicalKey?>(null) }
@@ -398,6 +423,7 @@ fun ProfileEditScreen(
         profileDesc = p.description
         analogMode = AnalogMode.fromCode(p.analogMode)
         rampStep = p.rampStep.toFloat()
+        deviceType = p.deviceType
     }
 
     Scaffold(
@@ -418,9 +444,19 @@ fun ProfileEditScreen(
                                         name = profileName,
                                         description = profileDesc,
                                         analogMode = analogMode.code,
-                                        rampStep = rampStep.toInt()
+                                        rampStep = rampStep.toInt(),
+                                        deviceType = deviceType
                                     )
                                 )
+                                // Si este perfil está activo en el daemon, recargarlo
+                                if (GamepadService.currentProfile()?.id == it.id &&
+                                    GamepadService.currentState() == GamepadService.State.RUNNING) {
+                                    context.startService(
+                                        Intent(context, GamepadService::class.java).apply {
+                                            action = GamepadService.ACTION_RELOAD_ACTIVE_PROFILE
+                                        }
+                                    )
+                                }
                             }
                             navController.popBackStack()
                         }
@@ -454,6 +490,22 @@ fun ProfileEditScreen(
                             label = { Text("Descripción") },
                             modifier = Modifier.fillMaxWidth()
                         )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        Text("Tipo de dispositivo:", style = MaterialTheme.typography.labelMedium)
+                        val deviceOptions = listOf(
+                            0 to "Teclado de Fábrica",
+                            1 to "Mando Xbox 360",
+                            2 to "Teclado PC"
+                        )
+                        deviceOptions.forEach { (code, label) ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(
+                                    selected = deviceType == code,
+                                    onClick = { deviceType = code }
+                                )
+                                Text(label, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
                     }
                 }
             }
@@ -808,6 +860,7 @@ private fun exportProfileData(context: Context, profile: Profile, mappings: List
         val json = JSONObject()
         json.put("name", profile.name)
         json.put("description", profile.description)
+        json.put("deviceType", profile.deviceType)
         json.put("analogMode", profile.analogMode)
         json.put("rampStep", profile.rampStep)
 
@@ -840,6 +893,7 @@ private suspend fun importProfileData(context: Context, uri: Uri, db: AppDatabas
             val profile = Profile(
                 name = json.getString("name"),
                 description = json.optString("description", ""),
+                deviceType = json.optInt("deviceType", 1),
                 analogMode = json.optInt("analogMode", 0),
                 rampStep = json.optInt("rampStep", 4096)
             )

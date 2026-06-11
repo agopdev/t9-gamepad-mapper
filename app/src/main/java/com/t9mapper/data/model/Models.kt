@@ -43,7 +43,15 @@ data class Profile(
      * Si está activo (el servicio puede usarlo).
      * Útil para desactivar perfiles sin borrarlos.
      */
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+
+    /**
+     * NUEVO CAMPO: Tipo de dispositivo a emular
+     * 0 = Teclado Default (Fábrica)
+     * 1 = Mando Xbox 360
+     * 2 = Teclado PC (USB/Bluetooth)
+     */
+    val deviceType: Int = 1
 )
 
 // ──────────────────────────────────────────────
