@@ -427,9 +427,9 @@ class GamepadService : Service() {
                     val typeCode =
                             when (m.mappingType) {
                                 com.t9mapper.data.model.MappingType.BUTTON -> 1
-                                com.t9mapper.data.model.MappingType.DPAD_ANALOG -> 2
-                                com.t9mapper.data.model.MappingType.DPAD_HAT -> 3
-                                com.t9mapper.data.model.MappingType.AXIS -> 4
+                                com.t9mapper.data.model.MappingType.AXIS -> 2
+                                com.t9mapper.data.model.MappingType.DPAD_ANALOG -> 3
+                                com.t9mapper.data.model.MappingType.DPAD_HAT -> 4
                             }
                     val base = 2 + i * 9
                     buf[base]     = (m.keyCode and 0xFF).toByte()

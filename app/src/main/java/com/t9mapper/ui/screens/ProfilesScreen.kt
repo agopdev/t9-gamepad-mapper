@@ -588,6 +588,7 @@ fun ProfileEditScreen(
         KeyMappingDialog(
             physKey = key,
             currentMapping = current,
+            deviceType = profile?.deviceType ?: 1,
             onDismiss = { mappingDialogKey = null },
             onSave = { newMapping ->
                 scope.launch {
@@ -658,22 +659,50 @@ private fun KeyMappingRow(
 }
 
 private fun mappingDescription(m: KeyMapping): String = when (m.mappingType) {
-    MappingType.BUTTON     -> "Botón: ${buttonName(m.gamepadCode)}"
+    MappingType.BUTTON      -> "Botón: ${buttonName(m.gamepadCode)}"
     MappingType.DPAD_ANALOG -> "D-Pad → ${if (m.gamepadCode == 1) "C-Stick / RS" else "Circle Pad / LS"}"
-    MappingType.DPAD_HAT   -> "D-Pad → HAT digital"
-    MappingType.AXIS       -> "Eje: ${axisName(m.gamepadCode)} = ${m.axisValue}"
+    MappingType.DPAD_HAT    -> "D-Pad → HAT digital"
+    MappingType.AXIS        -> "Eje: ${axisName(m.gamepadCode)} = ${m.axisValue}"
 }
 
 private fun buttonName(code: Int): String = when (code) {
-    0x130 -> "A";      0x131 -> "B"
-    0x133 -> "X";      0x134 -> "Y"
-    0x136 -> "LB";     0x137 -> "RB"
-    0x138 -> "LT";     0x139 -> "RT"
-    0x13A -> "Select"; 0x13B -> "Start"; 0x13C -> "Home"
-    0x13D -> "LS";     0x13E -> "RS"
-    0x220 -> "D↑";     0x221 -> "D↓"
-    0x222 -> "D←";     0x223 -> "D→"
-    else  -> "0x${code.toString(16)}"
+    // Xbox
+    ButtonCode.BTN_A       -> "A"
+    ButtonCode.BTN_B       -> "B"
+    ButtonCode.BTN_X       -> "X"
+    ButtonCode.BTN_Y       -> "Y"
+    ButtonCode.BTN_TL      -> "LB"
+    ButtonCode.BTN_TR      -> "RB"
+    ButtonCode.BTN_TL2     -> "LT"
+    ButtonCode.BTN_TR2     -> "RT"
+    ButtonCode.BTN_THUMBL  -> "LS"
+    ButtonCode.BTN_THUMBR  -> "RS"
+    ButtonCode.BTN_SELECT  -> "Select"
+    ButtonCode.BTN_START   -> "Start"
+    ButtonCode.BTN_MODE    -> "Home"
+    ButtonCode.BTN_DPAD_UP    -> "D↑"
+    ButtonCode.BTN_DPAD_DOWN  -> "D↓"
+    ButtonCode.BTN_DPAD_LEFT  -> "D←"
+    ButtonCode.BTN_DPAD_RIGHT -> "D→"
+    // Teclado PC — keycodes Linux comunes
+    1  -> "Esc"
+    2  -> "1";  3  -> "2";  4  -> "3";  5  -> "4";  6  -> "5"
+    7  -> "6";  8  -> "7";  9  -> "8";  10 -> "9";  11 -> "0"
+    14 -> "Backspace"; 15 -> "Tab"; 28 -> "Enter"; 57 -> "Space"
+    16 -> "Q"; 17 -> "W"; 18 -> "E"; 19 -> "R"; 20 -> "T"
+    21 -> "Y"; 22 -> "U"; 23 -> "I"; 24 -> "O"; 25 -> "P"
+    30 -> "A"; 31 -> "S"; 32 -> "D"; 33 -> "F"; 34 -> "G"
+    35 -> "H"; 36 -> "J"; 37 -> "K"; 38 -> "L"
+    44 -> "Z"; 45 -> "X"; 46 -> "C"; 47 -> "V"; 48 -> "B"
+    49 -> "N"; 50 -> "M"
+    58 -> "Caps"; 29 -> "Ctrl L"; 97 -> "Ctrl R"
+    42 -> "Shift L"; 54 -> "Shift R"; 56 -> "Alt L"; 100 -> "Alt R"
+    103 -> "↑"; 108 -> "↓"; 105 -> "←"; 106 -> "→"
+    59 -> "F1"; 60 -> "F2"; 61 -> "F3"; 62 -> "F4"
+    63 -> "F5"; 64 -> "F6"; 65 -> "F7"; 66 -> "F8"
+    67 -> "F9"; 68 -> "F10"; 87 -> "F11"; 88 -> "F12"
+    125 -> "Super"
+    else -> "0x${code.toString(16)}"
 }
 
 private fun axisName(code: Int): String = when (code) {
@@ -692,21 +721,25 @@ private fun axisName(code: Int): String = when (code) {
 private fun KeyMappingDialog(
     physKey: PhysicalKey,
     currentMapping: KeyMapping?,
+    deviceType: Int,
     onDismiss: () -> Unit,
     onSave: (KeyMapping) -> Unit,
     onDelete: () -> Unit
 ) {
-    val isDPad = physKey.keyCode in listOf(103, 108, 105, 106) // UP/DOWN/LEFT/RIGHT keycodes del kernel
+    val isDPad = physKey.keyCode in listOf(103, 108, 105, 106)
+    val isKeyboard = deviceType == 2
 
     var selectedType by remember {
-        mutableStateOf(currentMapping?.mappingType ?: if (isDPad) MappingType.DPAD_ANALOG else MappingType.BUTTON)
+        mutableStateOf(currentMapping?.mappingType ?: if (isDPad && !isKeyboard) MappingType.DPAD_ANALOG else MappingType.BUTTON)
     }
     var selectedBtnCode by remember { mutableStateOf(currentMapping?.gamepadCode ?: ButtonCode.BTN_A) }
     var selectedAxisCode by remember { mutableStateOf(currentMapping?.gamepadCode ?: AxisCode.ABS_X) }
     var axisValue by remember { mutableStateOf(currentMapping?.axisValue?.toFloat() ?: 32767f) }
     var analogStick by remember { mutableStateOf(if (currentMapping?.mappingType == MappingType.DPAD_ANALOG) currentMapping.gamepadCode else 0) }
+    var selectedKeyCode by remember { mutableStateOf(currentMapping?.gamepadCode ?: 28) } // 28 = KEY_ENTER
 
-    val buttonOptions = listOf(
+    // ── Opciones Gamepad Xbox ──
+    val xboxButtonOptions = listOf(
         ButtonCode.BTN_A      to "A",
         ButtonCode.BTN_B      to "B",
         ButtonCode.BTN_X      to "X",
@@ -727,12 +760,45 @@ private fun KeyMappingDialog(
     )
 
     val axisOptions = listOf(
-        AxisCode.ABS_X to "Left H (ABS_X)",
-        AxisCode.ABS_Y to "Left V (ABS_Y)",
-        AxisCode.ABS_Z to "L Trigger (ABS_Z)",
+        AxisCode.ABS_X  to "Left H (ABS_X)",
+        AxisCode.ABS_Y  to "Left V (ABS_Y)",
+        AxisCode.ABS_Z  to "L Trigger (ABS_Z)",
         AxisCode.ABS_RX to "Right H (ABS_RX)",
         AxisCode.ABS_RY to "Right V (ABS_RY)",
         AxisCode.ABS_RZ to "R Trigger (ABS_RZ)"
+    )
+
+    // ── Opciones Teclado PC (keycodes Linux) ──
+    // Agrupadas por categoría para facilitar selección
+    val keyboardGroups = listOf(
+        "Letras" to listOf(
+            16 to "Q", 17 to "W", 18 to "E", 19 to "R", 20 to "T",
+            21 to "Y", 22 to "U", 23 to "I", 24 to "O", 25 to "P",
+            30 to "A", 31 to "S", 32 to "D", 33 to "F", 34 to "G",
+            35 to "H", 36 to "J", 37 to "K", 38 to "L",
+            44 to "Z", 45 to "X", 46 to "C", 47 to "V", 48 to "B",
+            49 to "N", 50 to "M"
+        ),
+        "Números" to listOf(
+            2 to "1", 3 to "2", 4 to "3", 5 to "4", 6 to "5",
+            7 to "6", 8 to "7", 9 to "8", 10 to "9", 11 to "0"
+        ),
+        "Acción" to listOf(
+            28 to "Enter", 1 to "Esc", 14 to "Backspace", 15 to "Tab",
+            57 to "Space", 58 to "Caps Lock"
+        ),
+        "Flechas" to listOf(
+            103 to "↑", 108 to "↓", 105 to "←", 106 to "→"
+        ),
+        "Función" to listOf(
+            59 to "F1", 60 to "F2", 61 to "F3", 62 to "F4",
+            63 to "F5", 64 to "F6", 65 to "F7", 66 to "F8",
+            67 to "F9", 68 to "F10", 87 to "F11", 88 to "F12"
+        ),
+        "Sistema" to listOf(
+            29 to "Ctrl L", 97 to "Ctrl R", 42 to "Shift L", 54 to "Shift R",
+            56 to "Alt L", 100 to "Alt R", 125 to "Super"
+        )
     )
 
     AlertDialog(
@@ -746,16 +812,16 @@ private fun KeyMappingDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
 
-                // Tipo de mapeo
+                // ── Tipo de acción ──
                 Text("Tipo de acción:", style = MaterialTheme.typography.labelMedium)
 
                 val types = buildList {
-                    if (isDPad) {
+                    if (isDPad && !isKeyboard) {
                         add(MappingType.DPAD_ANALOG to "Analógico (Circle Pad)")
                         add(MappingType.DPAD_HAT to "D-Pad digital (HAT)")
                     }
-                    add(MappingType.BUTTON to "Botón")
-                    add(MappingType.AXIS to "Eje absoluto")
+                    add(MappingType.BUTTON to if (isKeyboard) "Tecla de teclado" else "Botón del mando")
+                    if (!isKeyboard) add(MappingType.AXIS to "Eje absoluto")
                 }
 
                 types.forEach { (type, label) ->
@@ -763,27 +829,44 @@ private fun KeyMappingDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        RadioButton(
-                            selected = selectedType == type,
-                            onClick = { selectedType = type }
-                        )
+                        RadioButton(selected = selectedType == type, onClick = { selectedType = type })
                         Text(label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
 
-                // Opciones según tipo
+                // ── Opciones según tipo y deviceType ──
                 when (selectedType) {
                     MappingType.BUTTON -> {
                         HorizontalDivider()
-                        Text("Botón del gamepad:", style = MaterialTheme.typography.labelMedium)
-                        buttonOptions.chunked(4).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                row.forEach { (code, name) ->
-                                    FilterChip(
-                                        selected = selectedBtnCode == code,
-                                        onClick = { selectedBtnCode = code },
-                                        label = { Text(name, style = MaterialTheme.typography.labelSmall) }
-                                    )
+                        if (isKeyboard) {
+                            // Teclado PC: grupos de teclas
+                            keyboardGroups.forEach { (groupName, keys) ->
+                                Text(groupName, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                                keys.chunked(5).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        row.forEach { (code, name) ->
+                                            FilterChip(
+                                                selected = selectedKeyCode == code,
+                                                onClick = { selectedKeyCode = code },
+                                                label = { Text(name, style = MaterialTheme.typography.labelSmall) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Xbox: botones del mando
+                            Text("Botón del gamepad:", style = MaterialTheme.typography.labelMedium)
+                            xboxButtonOptions.chunked(4).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    row.forEach { (code, name) ->
+                                        FilterChip(
+                                            selected = selectedBtnCode == code,
+                                            onClick = { selectedBtnCode = code },
+                                            label = { Text(name, style = MaterialTheme.typography.labelSmall) }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -812,9 +895,7 @@ private fun KeyMappingDialog(
                             Text("Derecha (C-Stick / RS)", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    else -> {
-                        // Bloque vacío o UI por defecto si MappingType.DPAD_HAT no requiere configuración extra
-                    }
+                    else -> {}
                 }
             }
         },
@@ -822,13 +903,13 @@ private fun KeyMappingDialog(
             Button(onClick = {
                 onSave(
                     KeyMapping(
-                        profileId  = 0, // se sobreescribe en el caller
-                        keyCode    = physKey.keyCode,
-                        keyLabel   = physKey.label,
+                        profileId   = 0,
+                        keyCode     = physKey.keyCode,
+                        keyLabel    = physKey.label,
                         mappingType = selectedType,
                         gamepadCode = when (selectedType) {
-                            MappingType.BUTTON -> selectedBtnCode
-                            MappingType.AXIS   -> selectedAxisCode
+                            MappingType.BUTTON     -> if (isKeyboard) selectedKeyCode else selectedBtnCode
+                            MappingType.AXIS       -> selectedAxisCode
                             MappingType.DPAD_ANALOG -> analogStick
                             else -> 0
                         },
@@ -850,11 +931,6 @@ private fun KeyMappingDialog(
         }
     )
 }
-
-// ──────────────────────────────────────────────
-// Exportar / Importar Perfil (JSON)
-// ──────────────────────────────────────────────
-
 private fun exportProfileData(context: Context, profile: Profile, mappings: List<KeyMapping>, uri: Uri) {
     try {
         val json = JSONObject()

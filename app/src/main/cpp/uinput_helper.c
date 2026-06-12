@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <sys/epoll.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
 
@@ -37,8 +38,34 @@ KeyMapping mappings[MAX_MAPPINGS];
 int n_mappings = 0;
 
 int uinput_fd = -1;
-int kbd_fd = -1; // Global para Grab/Ungrab
+int kbd_fd = -1;
+int passthrough_fd = -1;  // Dispositivo para reinyectar teclas sin mapeo
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
+// =========================================================
+// LIMPIEZA GARANTIZADA AL RECIBIR SIGTERM / SIGINT
+// =========================================================
+
+static void handle_sigterm(int sig) {
+    (void)sig;
+    if (kbd_fd >= 0) {
+        ioctl(kbd_fd, EVIOCGRAB, 0);
+        close(kbd_fd);
+        kbd_fd = -1;
+    }
+    if (passthrough_fd >= 0) {
+        ioctl(passthrough_fd, UI_DEV_DESTROY);
+        close(passthrough_fd);
+        passthrough_fd = -1;
+    }
+    if (uinput_fd >= 0) {
+        ioctl(uinput_fd, UI_DEV_DESTROY);
+        close(uinput_fd);
+        uinput_fd = -1;
+    }
+    fprintf(stderr, "uinput_helper: limpieza por señal, saliendo\n");
+    _exit(0);
+}
 
 static int dpad_up=0, dpad_down=0, dpad_left=0, dpad_right=0;
 static int hat_up=0, hat_down=0, hat_left=0, hat_right=0;
@@ -119,12 +146,54 @@ static int setup_keyboard(void) {
     return fd;
 }
 
-static void destroy_uinput_device() {
+// 3. TECLADO PASSTHROUGH — reinyecta teclas no mapeadas al sistema
+// BUS_USB + vendor/product genérico para que Android lo clasifique como teclado puro,
+// no como gamepad. Solo registramos los keycodes que necesitamos pasar al sistema.
+static int setup_passthrough(void) {
+    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+    if (fd < 0) return -1;
+    ioctl(fd, UI_SET_EVBIT, EV_KEY);
+    ioctl(fd, UI_SET_EVBIT, EV_SYN);
+
+    // Solo keycodes de sistema — NO registrar botones de gamepad (0x130+)
+    // para que Android no lo clasifique como GAMEPAD/JOYSTICK
+    int sys_keys[] = {
+        KEY_BACK,        // 158 — Atrás
+        KEY_POWER,       // 116 — Power/Bloquear
+        KEY_HOME,        // 102 — Home
+        KEY_MENU,        // 139 — Menú
+        KEY_VOLUMEUP,    // 115 — Volumen +
+        KEY_VOLUMEDOWN,  // 114 — Volumen -
+        KEY_PHONE,       // 169 — Llamar
+        // Teclas T9 numéricas por si el perfil no las mapea todas
+        KEY_0, KEY_1, KEY_2, KEY_3, KEY_4,
+        KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
+        // Flechas
+        KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
+        KEY_OK,          // 353 — Centro/OK
+    };
+    for (int i = 0; i < (int)(sizeof(sys_keys)/sizeof(sys_keys[0])); i++) {
+        ioctl(fd, UI_SET_KEYBIT, sys_keys[i]);
+    }
+
+    struct uinput_setup usetup = {0};
+    usetup.id.bustype = BUS_USB;      // USB hace que Android lo trate como teclado externo
+    usetup.id.vendor  = 0x0001;
+    usetup.id.product = 0x0001;
+    usetup.id.version = 1;
+    strncpy(usetup.name, "T9 Passthrough Keys", UINPUT_MAX_NAME_SIZE - 1);
+    ioctl(fd, UI_DEV_SETUP, &usetup);
+    ioctl(fd, UI_DEV_CREATE);
+    fprintf(stderr, "uinput_helper: Passthrough creado fd=%d\n", fd);
+    return fd;
+}
+
+static void destroy_uinput_device(void) {
     if (uinput_fd >= 0) {
         ioctl(uinput_fd, UI_DEV_DESTROY);
         close(uinput_fd);
         uinput_fd = -1;
-        fprintf(stderr,"uinput_helper: Dispositivo virtual destruido\n");
+        fprintf(stderr, "uinput_helper: Dispositivo virtual destruido\n");
     }
 }
 
@@ -141,22 +210,24 @@ static void emit_ev(int type, int code, int val) {
 
 static void process_key(int keycode, int action) {
     pthread_mutex_lock(&lock);
+    fprintf(stderr, "uinput_helper: key=%d action=%d\n", keycode, action);
     KeyMapping *m = NULL;
-    for (int i=0;i<n_mappings;i++) {
+    for (int i = 0; i < n_mappings; i++) {
         if (mappings[i].keycode == keycode) { m = &mappings[i]; break; }
     }
 
     if (m) {
+        // Tecla mapeada — emitir al dispositivo virtual (gamepad/teclado)
         int pressed = (action == 1 || action == 2);
         switch (m->type) {
             case MAP_BUTTON:
-                if (m->gamepad_code == 0x138) { // LT
+                if (m->gamepad_code == 0x138) {
                     emit_ev(EV_ABS, ABS_Z, pressed ? 255 : 0);
                     emit_ev(EV_SYN, SYN_REPORT, 0);
-                } else if (m->gamepad_code == 0x139) { // RT
+                } else if (m->gamepad_code == 0x139) {
                     emit_ev(EV_ABS, ABS_RZ, pressed ? 255 : 0);
                     emit_ev(EV_SYN, SYN_REPORT, 0);
-                } else if (m->gamepad_code >= 0x220 && m->gamepad_code <= 0x223) { // HAT
+                } else if (m->gamepad_code >= 0x220 && m->gamepad_code <= 0x223) {
                     if (m->gamepad_code == 0x220) hat_up = pressed;
                     else if (m->gamepad_code == 0x221) hat_down = pressed;
                     else if (m->gamepad_code == 0x222) hat_left = pressed;
@@ -172,14 +243,20 @@ static void process_key(int keycode, int action) {
                     emit_ev(EV_SYN, SYN_REPORT, 0);
                 }
                 break;
+            case MAP_AXIS: {
+                int val = pressed ? m->axis_value : 0;
+                emit_ev(EV_ABS, m->gamepad_code, val);
+                emit_ev(EV_SYN, SYN_REPORT, 0);
+                break;
+            }
             case MAP_DPAD_ANALOG: {
-                if (keycode==103) dpad_up=pressed;
-                else if (keycode==108) dpad_down=pressed;
-                else if (keycode==105) dpad_left=pressed;
-                else if (keycode==106) dpad_right=pressed;
-                int x=0, y=0, val=32767;
-                if (dpad_right) x=val; else if (dpad_left) x=-val;
-                if (dpad_down) y=val; else if (dpad_up) y=-val;
+                if (keycode == 103) dpad_up    = pressed;
+                else if (keycode == 108) dpad_down  = pressed;
+                else if (keycode == 105) dpad_left  = pressed;
+                else if (keycode == 106) dpad_right = pressed;
+                int x = 0, y = 0, val = 32767;
+                if (dpad_right) x =  val; else if (dpad_left) x = -val;
+                if (dpad_down)  y =  val; else if (dpad_up)   y = -val;
                 int axis_x = (m->gamepad_code == 1) ? ABS_RX : ABS_X;
                 int axis_y = (m->gamepad_code == 1) ? ABS_RY : ABS_Y;
                 emit_ev(EV_ABS, axis_x, x);
@@ -187,13 +264,18 @@ static void process_key(int keycode, int action) {
                 emit_ev(EV_SYN, SYN_REPORT, 0);
                 break;
             }
-            case MAP_AXIS: {
-                int val = pressed ? m->axis_value : 0;
-                emit_ev(EV_ABS, m->gamepad_code, val);
-                emit_ev(EV_SYN, SYN_REPORT, 0);
-                break;
-            }
         }
+    } else if (passthrough_fd >= 0) {
+        fprintf(stderr, "uinput_helper: passthrough key=%d fd=%d\n", keycode, passthrough_fd);
+        // Tecla sin mapeo — reinyectar al sistema via passthrough
+        // Android procesa KEY_BACK, KEY_POWER, etc. con normalidad
+        struct input_event ie = {0};
+        ie.type  = EV_KEY;
+        ie.code  = keycode;
+        ie.value = action;
+        write(passthrough_fd, &ie, sizeof(ie));
+        ie.type = EV_SYN; ie.code = SYN_REPORT; ie.value = 0;
+        write(passthrough_fd, &ie, sizeof(ie));
     }
     pthread_mutex_unlock(&lock);
 }
@@ -248,11 +330,15 @@ void* keyboard_thread(void* arg) {
 // =========================================================
 int main(void) {
     fprintf(stderr,"uinput_helper: iniciando daemon root\n");
-    signal(SIGPIPE,SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGTERM, handle_sigterm);
+    signal(SIGINT,  handle_sigterm);
 
-    // INICIO SEGURO: Creamos el gamepad de Xbox por defecto
-    // para que la app no se rompa mientras terminamos la interfaz en Kotlin.
-    uinput_fd = setup_gamepad(); 
+    // uinput_fd arranca en -1 — la app debe enviar 0xFC para crear el dispositivo.
+    // No creamos nada aquí para evitar dispositivos huérfanos si la app no llega a conectar.
+
+    // El passthrough sí se crea siempre — necesario desde el primer grab.
+    passthrough_fd = setup_passthrough();
 
     pthread_t kbd_tid;
     pthread_create(&kbd_tid,NULL,keyboard_thread,NULL);
@@ -333,9 +419,14 @@ int main(void) {
             }
         }
 done:
-        // Si la app se cierra o crashea, soltamos el teclado y destruimos el gamepad virtual
+        // Si la app se cierra o crashea, soltamos el teclado y destruimos dispositivos
         if (kbd_fd >= 0) ioctl(kbd_fd, EVIOCGRAB, 0);
         destroy_uinput_device();
+        if (passthrough_fd >= 0) {
+            ioctl(passthrough_fd, UI_DEV_DESTROY);
+            close(passthrough_fd);
+            passthrough_fd = -1;
+        }
         close(sock);
     }
     return 0;
